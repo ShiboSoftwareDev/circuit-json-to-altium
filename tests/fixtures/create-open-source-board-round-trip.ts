@@ -11,6 +11,10 @@ import { CircuitJsonToAltiumConverter } from "../../lib"
 import { convertAltiumPcbToCircuitJson } from "./convert-altium-pcb-to-circuit-json"
 import { getPcbRoundTripMetrics } from "./get-pcb-round-trip-metrics"
 
+const OVERVIEW_SVG_OPTIONS: AltiumPcbSvgOptions = {
+  layers: ["TOP", "TOPOVERLAY"],
+}
+
 export type OpenSourceBoardRoundTrip = ReturnType<
   typeof getPcbRoundTripMetrics
 > & {
@@ -69,8 +73,11 @@ export async function createOpenSourceBoardRoundTrip({
     ...metrics,
     roundTripSvg: serializeAltiumPcbToSvg(
       roundTripDocument,
-      roundTripSvgOptions,
+      roundTripSvgOptions ?? OVERVIEW_SVG_OPTIONS,
     ),
-    sourceSvg: serializeAltiumPcbToSvg(sourceDocument, sourceSvgOptions),
+    sourceSvg: serializeAltiumPcbToSvg(
+      sourceDocument,
+      sourceSvgOptions ?? OVERVIEW_SVG_OPTIONS,
+    ),
   }
 }
