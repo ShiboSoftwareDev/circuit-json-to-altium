@@ -57,6 +57,34 @@ function getPadName(pad: CircuitElement, context: PadLookupContext): string {
   )
 }
 
+function getSmtPadShapeFields(
+  pad: CircuitElement,
+  width: number,
+  height: number,
+  layer: "TOP" | "BOTTOM",
+): string[] {
+  const shape = asString(pad.shape).toLowerCase()
+  if (shape === "circle") return ["SHAPE=ROUND"]
+
+  const isPill = shape === "pill" || shape === "rotated_pill"
+  const requestedCornerRadius = isPill
+    ? asPositiveNumber(pad.radius, Math.min(width, height) / 2)
+    : Math.max(0, asNumber(pad.corner_radius ?? pad.rect_border_radius))
+  const cornerRadius = Math.min(
+    Math.min(width, height) / 2,
+    requestedCornerRadius,
+  )
+  if (cornerRadius <= 0) return ["SHAPE=RECTANGLE"]
+
+  const layerOrdinal = layer === "BOTTOM" ? 31 : 0
+  const cornerRadiusPercent = (cornerRadius * 200) / Math.min(width, height)
+  return [
+    "SHAPE=RECTANGLE",
+    `LAYER${layerOrdinal}ALTSHAPE=ROUNDRECT`,
+    `LAYER${layerOrdinal}CORNERRADIUS=${formatNumber(cornerRadiusPercent)}`,
+  ]
+}
+
 export const createPcbDocument = (circuitJson: CircuitElement[]): string => {
   const board = byType(circuitJson, "pcb_board")[0]
   const outline = getBoardOutline(board)
@@ -213,7 +241,6 @@ export const createPcbDocument = (circuitJson: CircuitElement[]): string => {
     const diameter = asPositiveNumber(pad.radius, 0.5) * 2
     const width = asPositiveNumber(pad.width, diameter)
     const height = asPositiveNumber(pad.height, width)
-    const shape = pad.shape === "circle" ? "ROUND" : "RECTANGLE"
     const layer =
       asString(pad.layer).toLowerCase() === "bottom" ? "BOTTOM" : "TOP"
     lines.push(
@@ -231,7 +258,7 @@ export const createPcbDocument = (circuitJson: CircuitElement[]): string => {
         "LOCKED=FALSE",
         `X=${formatMil(altiumCenter.x)}`,
         `Y=${formatMil(altiumCenter.y)}`,
-        `SHAPE=${shape}`,
+        ...getSmtPadShapeFields(pad, width, height, layer),
         `XSIZE=${formatMil(width * MILLIMETERS_TO_MILS)}`,
         `YSIZE=${formatMil(height * MILLIMETERS_TO_MILS)}`,
       ].join("|"),
