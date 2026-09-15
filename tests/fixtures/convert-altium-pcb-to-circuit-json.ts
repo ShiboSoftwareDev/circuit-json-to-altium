@@ -147,11 +147,42 @@ function isOverlayLayer(layer: string | undefined): boolean {
   return normalized === "TOPOVERLAY" || normalized === "BOTTOMOVERLAY"
 }
 
-function toCircuitPadShape(shape: string | undefined): "circle" | "rect" {
+function toCircuitPadShape(
+  shape: string | undefined,
+  alternateShape?: string,
+): "circle" | "rect" {
+  if (alternateShape?.toUpperCase() === "ROUNDRECT") return "rect"
   const normalized = shape?.toUpperCase() ?? ""
-  return normalized.includes("ROUND") || normalized.includes("CIRCLE")
+  return normalized === "ROUND" || normalized.includes("CIRCLE")
     ? "circle"
     : "rect"
+}
+
+function getPadAlternateShape(pad: AltiumRecord): string | undefined {
+  const layerOrdinal =
+    normalizeLayer(pad.getDecoded("LAYER")) === "BOTTOM" ? 31 : 0
+  return pad.getDecoded(`LAYER${layerOrdinal}ALTSHAPE`)
+}
+
+function getCircuitPadCornerRadius(
+  pad: AltiumRecord,
+  widthMils: number,
+  heightMils: number,
+): number | undefined {
+  const baseShape = pad.getDecoded("SHAPE")?.toUpperCase()
+  const alternateShape = getPadAlternateShape(pad)?.toUpperCase()
+  if (baseShape !== "ROUNDRECT" && alternateShape !== "ROUNDRECT") {
+    return undefined
+  }
+  const layerOrdinal =
+    normalizeLayer(pad.getDecoded("LAYER")) === "BOTTOM" ? 31 : 0
+  const cornerRadiusPercent = Math.min(
+    100,
+    Math.max(0, pad.getNumber(`LAYER${layerOrdinal}CORNERRADIUS`) ?? 100),
+  )
+  return toCircuitLength(
+    (Math.min(widthMils, heightMils) * cornerRadiusPercent) / 200,
+  )
 }
 
 function createArcPoints(record: AltiumRecord): AltiumPoint[] {
@@ -752,13 +783,22 @@ export function convertAltiumPcbToCircuitJson(
     }
 
     if (holeSizeMils <= 0 && normalizeLayer(layer) !== "MULTILAYER") {
+      const cornerRadius = getCircuitPadCornerRadius(
+        pad,
+        outerWidthMils,
+        outerHeightMils,
+      )
       elements.push({
         type: "pcb_smtpad",
         pcb_smtpad_id: `pcb_smtpad_${padIndex}`,
         ...commonFields,
         width: toCircuitLength(outerWidthMils),
         height: toCircuitLength(outerHeightMils),
-        shape: toCircuitPadShape(pad.getDecoded("SHAPE")),
+        shape: toCircuitPadShape(
+          pad.getDecoded("SHAPE"),
+          getPadAlternateShape(pad),
+        ),
+        ...(cornerRadius === undefined ? {} : { corner_radius: cornerRadius }),
         ccw_rotation: rotation,
         layer: toCircuitLayer(layer),
       })
