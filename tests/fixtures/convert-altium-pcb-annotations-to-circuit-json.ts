@@ -448,6 +448,8 @@ function isDocumentationTextLayer(layer: string): boolean {
   const normalizedLayer = normalizeLayer(layer)
   return (
     /^MECHANICAL(?:[1-9]|[12]\d|3[0-2])$/u.test(normalizedLayer) ||
+    normalizedLayer === "TOPSOLDER" ||
+    normalizedLayer === "BOTTOMSOLDER" ||
     normalizedLayer === "DRILLDRAWING" ||
     normalizedLayer === "DRILLGUIDE"
   )
@@ -463,7 +465,9 @@ function toCircuitKeepoutLayers(layer: string | undefined): string[] {
 
 function toCircuitVisibleLayer(layer: string): "bottom" | "top" {
   const normalizedLayer = normalizeLayer(layer)
-  return normalizedLayer === "MECHANICAL2" || normalizedLayer === "MECHANICAL16"
+  return normalizedLayer === "MECHANICAL2" ||
+    normalizedLayer === "MECHANICAL16" ||
+    normalizedLayer === "BOTTOMSOLDER"
     ? "bottom"
     : "top"
 }
