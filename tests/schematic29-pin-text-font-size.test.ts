@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { parseAltiumSchDoc } from "altiumts"
 import { CircuitJsonToAltiumConverter } from "../lib"
 
-test("exports native Arial 3 pin names and Arial 4 numbers with the correct name inset", async () => {
+test("exports native Arial 3 pin names and numbers with the correct margins", async () => {
   const circuitJson = await Bun.file(
     new URL(
       "./assets/generated-system-automotive-mirror.circuit.json",
@@ -35,25 +35,36 @@ test("exports native Arial 3 pin names and Arial 4 numbers with the correct name
     expect(record.getNumber("FONTID")).toBeUndefined()
     // Text remains anchored to the original body with independent native fonts.
     expect(record.getNumber("PINNAME_POSITIONCONGLOMERATE")).toBe(17)
-    expect(record.getNumber("NAME_CUSTOMPOSITION_MARGIN")).toBe(-2)
-    expect(record.getNumber("NAME_CUSTOMPOSITION_MARGIN_FRAC")).toBeUndefined()
-    expect(record.getNumber("PINDESIGNATOR_POSITIONCONGLOMERATE")).toBe(16)
-    expect(record.getNumber("DESIGNATOR_CUSTOMPOSITION_MARGIN")).toBe(undefined)
+    const orientation = record.getNumber("PINCONGLOMERATE")! & 3
+    const dx = [1, 0, -1, 0][orientation]!
+    const dy = [0, 1, 0, -1][orientation]!
+    const markerOffset =
+      (record.position!.x - previous.position!.x) * dx +
+      (record.position!.y - previous.position!.y) * dy
+    const margin = (key: string) =>
+      record.getNumber(key)! + (record.getNumber(`${key}_FRAC`) ?? 0) / 100_000
+    expect(margin("NAME_CUSTOMPOSITION_MARGIN") - markerOffset).toBeCloseTo(
+      0,
+      4,
+    )
+    expect(record.getNumber("PINDESIGNATOR_POSITIONCONGLOMERATE")).toBe(17)
+    expect(
+      margin("DESIGNATOR_CUSTOMPOSITION_MARGIN") + markerOffset,
+    ).toBeCloseTo(3, 4)
     for (const kind of ["NAME", "DESIGNATOR"]) {
       const fontId = record.getNumber(`${kind}_CUSTOMFONTID`)
-      expect(sheet.getCaseInsensitive(`SIZE${fontId}`)).toBe(
-        kind === "NAME" ? "3" : "4",
-      )
+      expect(sheet.getCaseInsensitive(`SIZE${fontId}`)).toBe("3")
       expect(sheet.getDecoded(`FONTNAME${fontId}`)).toBe("Arial")
       expect(record.getNumber(`${kind}_CUSTOMCOLOR`)).toBe(
         previous.getNumber("COLOR"),
       )
     }
+    // The historic file mapped input arrows to an extra IEEE clock symbol.
+    expect(record.getNumber("SYMBOL_INNEREDGE")).toBeUndefined()
     for (const field of [
       "NAME",
       "DESIGNATOR",
       "PINCONGLOMERATE",
-      "SYMBOL_INNEREDGE",
       "SYMBOL_OUTEREDGE",
     ]) {
       expect(record.getCaseInsensitive(field)).toBe(

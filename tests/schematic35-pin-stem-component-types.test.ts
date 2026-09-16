@@ -7,6 +7,11 @@ import {
   sourceComponent,
   sourcePort,
 } from "./fixtures"
+import {
+  getRecordCorner,
+  getRecordLocation,
+} from "./fixtures/altium-schematic-coordinate-utils"
+import { getHairlinePinStem } from "./fixtures/get-hairline-pin-stem"
 
 // Derive coverage from Circuit JSON so newly added component types are checked
 // automatically, including types absent from the real-circuit fixtures.
@@ -17,7 +22,7 @@ const componentFtypes = any_source_component.options.flatMap((schema) =>
 )
 
 test.each([undefined, ...componentFtypes])(
-  "exports connected hairline pin stems for ftype %s and preserves clock/inversion edges",
+  "exports connected hairline pin stems for ftype %s and preserves pin markers",
   async (ftype) => {
     const elements: CircuitElement[] = [
       board(),
@@ -56,31 +61,31 @@ test.each([undefined, ...componentFtypes])(
     }
     const doc = (await extractArchive(elements)).schematics[0]!
     expect(doc.pins).toHaveLength(4)
-    expect(doc.wires).toHaveLength(4)
+    expect(doc.wires).toHaveLength(0)
     for (const [i, pin] of doc.pins.entries()) {
-      const nativeLength = i === 3 ? 5 : 0
+      const nativeLength = 0
+      const markerOffset = [0, Math.sqrt(3), 2, 2.4 + Math.sqrt(3) + 2][i]!
       expect(pin.getNumber("PINLENGTH")).toBe(nativeLength)
-      expect(pin.getNumber("ELECTRICAL")).toBe([4, 0, 2, 1][i])
-      expect(pin.getNumber("SYMBOL_INNEREDGE")).toBe(
-        i === 1 || i === 3 ? 3 : undefined,
-      )
-      expect(pin.getNumber("SYMBOL_OUTEREDGE")).toBe(i === 3 ? 1 : undefined)
+      expect(pin.getNumber("ELECTRICAL")).toBe(4)
+      expect(pin.getNumber("SYMBOL_INNEREDGE")).toBeUndefined()
+      expect(pin.getNumber("SYMBOL_OUTEREDGE")).toBeUndefined()
       const dx = [1, 0, -1, 0][i]!
       const dy = [0, 1, 0, -1][i]!
-      const start = {
-        x: pin.position!.x + dx * nativeLength,
-        y: pin.position!.y + dy * nativeLength,
-      }
-      const wire = doc.wires[i]!
-      expect([wire.getNumber("X1"), wire.getNumber("Y1")]).toEqual([
-        start.x,
-        start.y,
-      ])
-      expect([wire.getNumber("X2"), wire.getNumber("Y2")]).toEqual([
-        pin.position!.x + dx * 10,
-        pin.position!.y + dy * 10,
-      ])
-      expect(wire.getNumber("LINEWIDTH")).toBe(0)
+      const component = doc.components[0]!.position!
+      // The native connection is the source port center, not the marker edge.
+      expect(pin.position).toEqual({
+        x: component.x + dx * 30,
+        y: component.y + dy * 30,
+      })
+      const stem = getHairlinePinStem(doc, pin)!
+      expect(stem).toBeDefined()
+      const start = getRecordLocation(stem)
+      expect(start.x).toBeCloseTo(component.x + dx * (20 + markerOffset), 4)
+      expect(start.y).toBeCloseTo(component.y + dy * (20 + markerOffset), 4)
+      expect(getRecordCorner(stem)).toEqual(pin.position!)
+      expect(pin.getNumber("NAME_CUSTOMPOSITION_MARGIN")).toBe(10)
+      expect(pin.getNumber("DESIGNATOR_CUSTOMPOSITION_MARGIN")).toBe(-7)
+      expect(stem.getNumber("LINEWIDTH")).toBe(0)
     }
   },
 )

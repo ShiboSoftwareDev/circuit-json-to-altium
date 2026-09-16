@@ -60,10 +60,29 @@ Altium pins use independently enabled `NAME_CUSTOMFONTID` and
 `DESIGNATOR_CUSTOMFONTID` settings. Generic pin `FONTID` does not control them.
 The custom settings preserve the existing pin text color.
 
-Pin names sit **0.1 circuit units inside the body edge**, matching Circuit JSON:
-`NAME_CUSTOMPOSITION_MARGIN = -(0.1 × 20) = -2`. Custom position and font are
-enabled together (`PINNAME_POSITIONCONGLOMERATE=17`); numbers retain their native
-position.
+Current exports place pin names **0.1 circuit units inside the body edge**.
+Altium adds a 2-unit inward gap before `NAME_CUSTOMPOSITION_MARGIN`, so the
+margin is `0.1 × 20 - 2 = 0`, plus the distance from the body to the native terminal.
+Custom position and font are enabled together
+(`PINNAME_POSITIONCONGLOMERATE=17`). The earlier review file above predates this
+margin correction and retains the native default number position.
+
+## Pin number positions
+
+[TI TPS61288 power supply](./ti-tps61288-pin-numbers-start.SchDoc) places native
+pin numbers **0.15 circuit units outside the component body**:
+`DESIGNATOR_CUSTOMPOSITION_MARGIN = 0.15 × 20 = 3`, replacing Altium's default
+margin of 9. Custom position and font are enabled together
+(`PINDESIGNATOR_POSITIONCONGLOMERATE=17`). Numbers remain Arial **4 pt**, and
+names remain **3 pt**. U1/U2 pin 5 was checked in the real Altium 365 Viewer.
+
+## Pin-number font size
+
+[TI TPS61288 power supply](./ti-tps61288-pin-numbers-3pt.SchDoc) uses Arial
+**3 pt** for native pin numbers: `0.15 circuit units × 20 = 3`, matching the
+Circuit JSON font size at the local preview's coordinate scale. The body-side
+number margin is **3 schematic units**. Pin-name fonts and pin lengths are
+unchanged.
 
 ## Schematic stroke widths
 
@@ -118,3 +137,34 @@ uses Arial **4 pt** for custom-symbol U3 (`0.18 × 20 = 3.6 → 4 pt`),
 **3 pt** for its MPN (`0.14 × 20 = 2.8 → 3 pt`) and **3 pt** for its drawn
 pin numbers (`0.13 × 20 = 2.6 → 3 pt`). Text linked by `schematic_symbol_id`
 uses the same native font-size mapping as standalone notes.
+
+## Pin markers
+
+[Pin marker comparison](./pin-marker-bubbles-1p2.SchDoc) uses white-filled
+native graphics with the hairline stroke preset (`LINEWIDTH=0`). Bubble radius
+is **1.2 Altium units** (`0.06 Circuit JSON units × 20`). Triangle side length
+is **2 units** (`0.1 × 20`), with depth **√3 units** and half-width **1 unit**.
+Wires stop at the markers' outer edges, leaving their interiors clear.
+[Automotive communication sheet](./automotive-mirror-communication-pin-markers.SchDoc)
+shows the same conversion on the VCC and signal pins.
+Pin names remain 2 units inside the body; numbers remain 3 units outside.
+
+Visual input/output flags draw these custom arrows instead of inferring native
+Input/Output/Bidirectional types, which add fixed-size automatic triangles.
+These pins use **Passive** electrical type: connectivity is retained, but
+Altium ERC no longer checks their input/output direction.
+
+
+## Pin connection points
+
+[Automotive communication sheet](./automotive-mirror-communication-pin-terminals.SchDoc)
+and [four-direction pin example](./pin-connection-points.SchDoc) ([SVG detail](./pin-connection-points-detail.svg)) place native
+zero-length pin terminals at the converted `schematic_port.center`, where the
+Circuit JSON trace connects. This applies to boxed chips, built-in symbols and
+custom symbols, including U6, R21 and L7 in the automotive sheet.
+
+Stems are component-owned lines using **Smallest** (`LINEWIDTH=0`), ending at
+the outside of filled pin markers. They are no longer sheet wires with native
+terminals at the body. For a body-to-terminal distance `L`, native name margin
+is `L` and number margin is `3 - L`, preserving the 2-unit name inset and
+3-unit number offset from the body. Fonts, marker sizes and colors are unchanged.

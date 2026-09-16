@@ -10,6 +10,7 @@ import {
   SCHEMATIC_PIN_NAME_FONT_SIZE_CIRCUIT_UNITS,
   SCHEMATIC_PIN_NUMBER_FONT_SIZE_CIRCUIT_UNITS,
 } from "./create-altium-schematic-font-table"
+import { createOwnedSchematicRecordFields } from "./create-altium-schematic-graphic-record-fields"
 import {
   createAltiumSchematicNetLabelRecordFields,
   getAltiumPowerPortStyle,
@@ -27,6 +28,7 @@ import {
 import { createAltiumSchematicSymbolPrimitiveRecordFields } from "./create-altium-schematic-symbol-primitive-record-fields"
 import { createAltiumSchematicSymbolRecords } from "./create-altium-schematic-symbol-records"
 import { createAltiumSchematicTextRecordFields } from "./create-altium-schematic-text-record-fields"
+import { createSchematicPinMarkerRecords } from "./create-schematic-pin-marker-records"
 import type { AltiumSchematicTemplate } from "./extract-altium-schematic-template"
 import { findSchematicComponentText } from "./find-schematic-component-text"
 import { findSchematicTextPresentation } from "./find-schematic-text-presentation"
@@ -40,7 +42,6 @@ import {
   sanitizeField,
 } from "./format"
 import { getAltiumSchematicTextPresentation } from "./get-altium-schematic-text-presentation"
-import { getHairlinePinGeometry } from "./get-hairline-pin-geometry"
 import { getSchematicTransform } from "./get-schematic-transform"
 import { isSchematicSheetAnnotation } from "./is-schematic-sheet-annotation"
 import { isSchematicSymbolPrimitive } from "./is-schematic-symbol-primitive"
@@ -85,7 +86,7 @@ type AltiumSchematicBoxBounds = {
   top: number
 }
 
-type BoxedSchematicPinGeometryParams = {
+type BoxedSchematicPinLocationParams = {
   circuitPinTerminal: Point
   circuitToAltiumSchematicPoint: PointTransform
   distanceFromComponentEdge: number
@@ -111,8 +112,8 @@ const ALTIUM_PIN_CUSTOM_FONT_FLAG = 0x10
 const ALTIUM_PIN_CUSTOM_POSITION_FLAG = 0x01
 // Match Circuit JSON's pin-name inset from the body edge, independently of font size.
 const SCHEMATIC_PIN_NAME_INSET_CIRCUIT_UNITS = 0.1
-const ALTIUM_PIN_CLOCK_SYMBOL = 3
-const ALTIUM_PIN_INVERSION_SYMBOL = 1
+// Keep pin numbers near the body instead of Altium's default 9-unit margin.
+const SCHEMATIC_PIN_NUMBER_MARGIN_CIRCUIT_UNITS = 0.15
 const ALTIUM_SCHEMATIC_DEFAULT_COLOR = 0x37_29_1f
 const ALTIUM_SCHEMATIC_FALLBACK_BODY_COLOR = 0xc2_ffff
 const ALTIUM_PIN_ORIENTATION_BY_FACING_DIRECTION: Record<string, number> = {
@@ -224,33 +225,19 @@ function getFallbackSchematicBoxBounds({
   }
 }
 
-function getBoxedSchematicPinGeometry({
+function getBoxedSchematicPinLocation({
   circuitPinTerminal,
   circuitToAltiumSchematicPoint,
   distanceFromComponentEdge,
   facingDirection,
-}: BoxedSchematicPinGeometryParams): { length: number; location: Point } {
+}: BoxedSchematicPinLocationParams): Point {
   const outwardDirection =
     PIN_OUTWARD_DIRECTION_BY_FACING_DIRECTION[facingDirection] ??
     DEFAULT_PIN_OUTWARD_DIRECTION
-  const circuitPinBody = {
+  return circuitToAltiumSchematicPoint({
     x: circuitPinTerminal.x - outwardDirection.x * distanceFromComponentEdge,
     y: circuitPinTerminal.y - outwardDirection.y * distanceFromComponentEdge,
-  }
-  const altiumPinBody = circuitToAltiumSchematicPoint(circuitPinBody)
-  const altiumPinTerminal = circuitToAltiumSchematicPoint(circuitPinTerminal)
-  return {
-    length: Math.max(
-      1,
-      Math.round(
-        Math.hypot(
-          altiumPinTerminal.x - altiumPinBody.x,
-          altiumPinTerminal.y - altiumPinBody.y,
-        ),
-      ),
-    ),
-    location: altiumPinBody,
-  }
+  })
 }
 
 function doesElementBelongToSchematicSheet({
@@ -814,7 +801,7 @@ export function createSchematicDocument({
       const sourcePort = sourcePorts.get(asString(schematicPort.source_port_id))
       const circuitPinTerminal = asPoint(schematicPort.center) ?? { x: 0, y: 0 }
       const facingDirection = asString(schematicPort.facing_direction)
-      const boxedSchematicPinGeometry = getBoxedSchematicPinGeometry({
+      const boxedSchematicPinLocation = getBoxedSchematicPinLocation({
         circuitPinTerminal,
         circuitToAltiumSchematicPoint,
         distanceFromComponentEdge: Math.max(
@@ -856,10 +843,7 @@ export function createSchematicDocument({
         builtinPinGeometry?.location ??
         (schematicSymbolRecords
           ? circuitToAltiumSchematicPoint(circuitPinTerminal)
-          : boxedSchematicPinGeometry.location)
-      const altiumPinLength =
-        builtinPinGeometry?.length ??
-        (schematicSymbolRecords ? 10 : boxedSchematicPinGeometry.length)
+          : boxedSchematicPinLocation)
       const pinNameText =
         typeof schematicPort.display_pin_label === "string"
           ? findSchematicComponentText({
@@ -916,25 +900,34 @@ export function createSchematicDocument({
       )!
       const hasInputArrow = schematicPort.has_input_arrow === true
       const hasOutputArrow = schematicPort.has_output_arrow === true
-      // Derive direction from the pin, independently of its component's ftype.
-      // Pins with no direction use Passive instead of Altium's implicit Input.
-      const electricalType = hasInputArrow
-        ? hasOutputArrow
-          ? 1 // Bidirectional
-          : 0 // Input
-        : hasOutputArrow
-          ? 2 // Output
-          : 4 // Passive
-      const nameMargin = -circuitToAltiumSchematicLength(
+      const nameInset = circuitToAltiumSchematicLength(
         SCHEMATIC_PIN_NAME_INSET_CIRCUIT_UNITS,
       )
-      const hairlinePin = getHairlinePinGeometry({
+      const numberMargin = circuitToAltiumSchematicLength(
+        SCHEMATIC_PIN_NUMBER_MARGIN_CIRCUIT_UNITS,
+      )
+      const pinMarkers = createSchematicPinMarkerRecords({
         body: altiumPinLocation,
-        length: altiumPinLength,
         orientation: altiumPinOrientation,
         hasInversionCircle:
           schematicPort.is_drawn_with_inversion_circle === true,
+        hasInputArrow,
+        hasOutputArrow,
+        ownerIndex: altiumComponentRecordIndex,
+        color: pinColor,
+        toAltiumLength: circuitToAltiumSchematicLength,
       })
+      for (const record of pinMarkers.records) {
+        addSchematicRecord(record, schematicRecordContext)
+      }
+      const outwardDirection =
+        PIN_OUTWARD_DIRECTION_BY_FACING_DIRECTION[facingDirection] ??
+        DEFAULT_PIN_OUTWARD_DIRECTION
+      // A zero-length native pin belongs at the Circuit JSON terminal. Text
+      // margins compensate for its distance from the original symbol body.
+      const pinBodyOffset =
+        (altiumPinTerminal.x - altiumPinLocation.x) * outwardDirection.x +
+        (altiumPinTerminal.y - altiumPinLocation.y) * outwardDirection.y
       addSchematicRecord(
         [
           "RECORD=2",
@@ -943,51 +936,67 @@ export function createSchematicDocument({
           `DESIGNATOR=${pinDesignator}`,
           `NAME=${pinName}`,
           `PINCONGLOMERATE=${altiumPinConglomerate}`,
-          `LOCATION.X=${altiumPinLocation.x}`,
-          `LOCATION.Y=${altiumPinLocation.y}`,
-          `PINLENGTH=${hairlinePin.nativeLength}`,
+          ...createAltiumSchematicCoordinateFields(
+            "LOCATION.X",
+            altiumPinTerminal.x,
+          ),
+          ...createAltiumSchematicCoordinateFields(
+            "LOCATION.Y",
+            altiumPinTerminal.y,
+          ),
+          "PINLENGTH=0",
           // This preset controls native pin symbols, not the straight stem.
           `SYMBOL_LINEWIDTH=${ALTIUM_SCHEMATIC_HAIRLINE_WIDTH}`,
-          `ELECTRICAL=${electricalType}`,
-          ...(schematicPort.has_input_arrow === true
-            ? [`SYMBOL_INNEREDGE=${ALTIUM_PIN_CLOCK_SYMBOL}`]
-            : []),
-          ...(schematicPort.is_drawn_with_inversion_circle === true
-            ? [`SYMBOL_OUTEREDGE=${ALTIUM_PIN_INVERSION_SYMBOL}`]
-            : []),
+          // Direction arrows are exported as sized graphics. Inferring native
+          // Input/Output types adds Altium's fixed-size automatic indicators.
+          "ELECTRICAL=4",
           `COLOR=${pinColor}`,
           // Native pins require independently enabled name/designator fonts.
           // Custom settings also select text color, so retain the pin color.
           `PINNAME_POSITIONCONGLOMERATE=${ALTIUM_PIN_CUSTOM_FONT_FLAG | ALTIUM_PIN_CUSTOM_POSITION_FLAG}`,
           ...createAltiumSchematicCoordinateFields(
             "NAME_CUSTOMPOSITION_MARGIN",
-            nameMargin,
+            // Native names start 2 units inside the pin body; custom margins
+            // add to that inset, unlike designator margins which point outward.
+            nameInset - 2 + pinBodyOffset,
           ),
           `NAME_CUSTOMFONTID=${pinNameFontId}`,
           `NAME_CUSTOMCOLOR=${pinColor}`,
-          `PINDESIGNATOR_POSITIONCONGLOMERATE=${ALTIUM_PIN_CUSTOM_FONT_FLAG}`,
+          `PINDESIGNATOR_POSITIONCONGLOMERATE=${ALTIUM_PIN_CUSTOM_FONT_FLAG | ALTIUM_PIN_CUSTOM_POSITION_FLAG}`,
+          ...createAltiumSchematicCoordinateFields(
+            "DESIGNATOR_CUSTOMPOSITION_MARGIN",
+            numberMargin - pinBodyOffset,
+          ),
           `DESIGNATOR_CUSTOMFONTID=${pinNumberFontId}`,
           `DESIGNATOR_CUSTOMCOLOR=${pinColor}`,
         ],
         schematicRecordContext,
       )
-      if (hairlinePin.nativeLength < altiumPinLength) {
-        // Keep native names, numbers, electrical type and edge symbols anchored
-        // to the body. The thin wire joins the native terminal to its original
-        // connection, including on component types other than passive parts.
+      if (
+        pinMarkers.stemStart.x !== altiumPinTerminal.x ||
+        pinMarkers.stemStart.y !== altiumPinTerminal.y
+      ) {
+        // The thin stem is component artwork; only the outer native terminal
+        // connects to sheet wires. Stop at the filled markers' outer edge.
         addSchematicRecord(
           [
-            "RECORD=27",
-            "LOCATIONCOUNT=2",
-            ...createAltiumSchematicCoordinateFields("X1", hairlinePin.start.x),
-            ...createAltiumSchematicCoordinateFields("Y1", hairlinePin.start.y),
+            "RECORD=13",
+            ...createOwnedSchematicRecordFields(altiumComponentRecordIndex),
             ...createAltiumSchematicCoordinateFields(
-              "X2",
-              hairlinePin.connection.x,
+              "LOCATION.X",
+              pinMarkers.stemStart.x,
             ),
             ...createAltiumSchematicCoordinateFields(
-              "Y2",
-              hairlinePin.connection.y,
+              "LOCATION.Y",
+              pinMarkers.stemStart.y,
+            ),
+            ...createAltiumSchematicCoordinateFields(
+              "CORNER.X",
+              altiumPinTerminal.x,
+            ),
+            ...createAltiumSchematicCoordinateFields(
+              "CORNER.Y",
+              altiumPinTerminal.y,
             ),
             `COLOR=${pinColor}`,
             `LINEWIDTH=${ALTIUM_SCHEMATIC_HAIRLINE_WIDTH}`,
