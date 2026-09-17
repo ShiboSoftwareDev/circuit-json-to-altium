@@ -290,10 +290,10 @@ export const createPcbDocument = (circuitJson: CircuitElement[]): string => {
     )
     const holeHeight = asPositiveNumber(hole.hole_height, holeWidth)
     const isSlotted = Math.abs(holeWidth - holeHeight) > 1e-9
-    const holeRotation = asNumber(
+    const holeCcwRotationDegrees = asNumber(
       hasIndependentPadRotation ? hole.hole_ccw_rotation : hole.ccw_rotation,
     )
-    const padRotation = asNumber(
+    const padCcwRotationDegrees = asNumber(
       hasIndependentPadRotation ? hole.rect_ccw_rotation : hole.ccw_rotation,
     )
     const isRoundedRectPad =
@@ -308,12 +308,12 @@ export const createPcbDocument = (circuitJson: CircuitElement[]): string => {
           : [`COMPONENT=${altiumComponentIndex}`]),
         ...(net ? [`NET=${net.index}`] : []),
         "LAYER=MULTILAYER",
-        `ROTATION=${formatNumber(convertCircuitPcbCcwRotationDegreesToAltium(padRotation))}`,
+        `ROTATION=${formatNumber(convertCircuitPcbCcwRotationDegreesToAltium(padCcwRotationDegrees))}`,
         `NAME=${getPadName(hole, padLookupContext)}`,
         `HOLESIZE=${formatMil(Math.min(holeWidth, holeHeight) * MILLIMETERS_TO_MILS)}`,
         `HOLEWIDTH=${formatMil(Math.max(holeWidth, holeHeight) * MILLIMETERS_TO_MILS)}`,
         `HOLESHAPE=${isSlotted ? "SLOT" : "ROUND"}`,
-        `HOLEROTATION=${formatNumber(convertCircuitPcbCcwRotationDegreesToAltium(holeRotation))}`,
+        `HOLEROTATION=${formatNumber(convertCircuitPcbCcwRotationDegreesToAltium(holeCcwRotationDegrees))}`,
         "PLATED=TRUE",
         "LOCKED=FALSE",
         `X=${formatMil(altiumCenter.x)}`,
