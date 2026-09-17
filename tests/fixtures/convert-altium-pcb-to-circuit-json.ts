@@ -193,8 +193,8 @@ function createArcPoints(record: AltiumRecord): AltiumPoint[] {
 
   const startAngle = record.getNumber("STARTANGLE") ?? 0
   const endAngle = record.getNumber("ENDANGLE") ?? 360
-  const sweep = endAngle - startAngle || 360
-  const segmentCount = Math.max(8, Math.ceil(Math.abs(sweep) / 7.5))
+  const sweep = (endAngle - startAngle + 360) % 360 || 360
+  const segmentCount = Math.max(8, Math.ceil(sweep / 7.5))
 
   return Array.from({ length: segmentCount + 1 }, (_, index) => {
     const angle = startAngle + (sweep * index) / segmentCount
